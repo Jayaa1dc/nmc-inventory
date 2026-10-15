@@ -1,0 +1,17 @@
+:root{--bg:#f6f8f5;--card:#fff;--tx:#1d2b1f;--mu:#667568;--bd:#d9e1d6;--g:#2e6b3a;--gl:#e4f1e5;--r:#c0392b;--rl:#fbe4e1}
+@media (prefers-color-scheme:dark){:root{--bg:#121a14;--card:#1b261d;--tx:#e6efe7;--mu:#97a89a;--bd:#2c3b2f;--g:#6fbf7d;--gl:#223a27;--r:#ef7d70;--rl:#3d2420}}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.4 -apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--bd)}
+h1{font-size:17px;margin:0;color:var(--g)}nav{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px}
+nav button{border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:7px 12px;border-radius:8px;cursor:pointer;font:inherit}
+nav button.on{background:var(--g);color:#fff;border-color:var(--g)}main{padding:0 16px 24px;max-width:1200px;margin:auto}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}.card,.box{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px}.box{margin-bottom:14px}
+.card b{display:block;font-size:22px}.card span,.mu{color:var(--mu);font-size:12px}.sc{overflow-x:auto}table{border-collapse:collapse;width:100%}
+th,td{padding:6px 8px;border-bottom:1px solid var(--bd);text-align:left;white-space:nowrap}th{background:var(--gl);font-size:12px}td.n,th.n{text-align:right}
+.low{background:var(--rl);color:var(--r);font-weight:600}.ok{color:var(--g)}
+input,select,textarea,button.p{font:inherit;padding:7px 9px;border:1px solid var(--bd);border-radius:7px;background:var(--card);color:var(--tx)}
+button.p{background:var(--g);color:#fff;border-color:var(--g);cursor:pointer}button.p:disabled{opacity:.5}button.x{border:0;background:none;color:var(--r);cursor:pointer;font-size:16px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:end}.row label{display:flex;flex-direction:column;font-size:12px;color:var(--mu);gap:3px}h2{font-size:15px;margin:0 0 8px}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--g);color:#fff;padding:8px 16px;border-radius:8px;z-index:9}
+td input{width:90px}td input.li{width:260px}.login{max-width:340px;margin:12vh auto;display:flex;flex-direction:column;gap:10px}
+@media print{header,nav,.noprint,#toast{display:none!important}html,body{background:#fff;color:#000}.box{border:0}th{background:#eee!important}}
