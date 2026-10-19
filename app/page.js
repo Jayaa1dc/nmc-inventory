@@ -77,6 +77,8 @@ function Branch({ D, stock, lowP, canB }) {
 }
 
 const ItemList = ({ items }) => <datalist id="il">{items.map((i) => <option key={i.code} value={`${i.code} | ${i.name}`} />)}</datalist>;
+const toks = (s) => new Set(String(s).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !["nos", "pcs", "pkt", "box", "the"].includes(w)));
+const similar = (items, text) => { const a = toks(text); if (!a.size) return null; let best = null, bs = 0; for (const i of items) { const b = toks(i.name); let n = 0; a.forEach((w) => b.has(w) && n++); const s = n / Math.max(a.size, b.size); if (s > bs) { bs = s; best = i; } } return bs >= 0.6 ? best : null; };
 const findItem = (items, v) => { const c = (v || "").split(" | ")[0].trim().toUpperCase(); return items.find((i) => i.code === c) || items.find((i) => i.name.toLowerCase() === (v || "").trim().toLowerCase()); };
 
 function Receive({ D, canB, toast, go }) {
@@ -98,26 +100,42 @@ function Receive({ D, canB, toast, go }) {
       const r = await fetch("/api/extract-grn", { method: "POST", body: fd }), j = await r.json();
       if (!r.ok) { setSt(""); return toast(j.error || "Could not read the file"); }
       setF((x) => ({ ...x, branch: canB.includes(j.center) ? j.center : x.branch, sup: D.sups.some((s) => s.code === j.supplier_code) ? j.supplier_code : x.sup, inv: j.invoice_no || x.inv, grn: j.grn_no || x.grn, by: j.received_by || x.by, date: /^\d{4}-\d{2}-\d{2}$/.test(j.date || "") ? j.date : x.date }));
-      const ls = (j.lines || []).map((l) => { const it = D.items.find((i) => i.code === l.item_code); return { item: it ? it.code + " | " + it.name : l.text || "", qty: l.qty ?? "", price: l.unit_price || "" }; });
+      const ls = (j.lines || []).map((l) => { const it = D.items.find((i) => i.code === l.item_code); return { item: it ? it.code + " | " + it.name : l.text || "", qty: l.qty ?? "", price: l.unit_price || "", unit: l.unit || "" }; });
       setLines(ls.length ? ls : [{ item: "", qty: "", price: "" }]);
       const un = ls.filter((l) => !fi(l.item)).length;
-      setSt(`Read ${ls.length} line(s).` + (un ? ` ${un} item(s) not matched (red): pick the correct item.` : "") + " Check everything, then press Save.");
+      setSt(`Read ${ls.length} line(s).` + (un ? ` ${un} item(s) are not in the catalog: pick the matching item, or leave them and they will be added as NEW items (with new codes) when you save.` : "") + " Check everything, then press Save.");
     } catch (e) { setSt(""); toast("Could not read the file: " + e.message); }
   }
   async function save() {
     if (!f.grn.trim()) return toast("GRN No is required");
     if (f.sup && !f.inv.trim()) return toast("Enter the invoice no");
     if (!f.by.trim()) return toast("Enter who received the goods");
-    const out = [];
-    for (const l of lines) { if (!l.item && !l.qty) continue; const it = fi(l.item), q = Number(l.qty); if (!it || !(q > 0)) return toast("Check the item lines: pick an item and enter a quantity"); out.push({ item_code: it.code, qty: q, unit_price: Number(l.price) || 0 }); }
+    const out = [], fresh = {};
+    for (const l of lines) {
+      if (!l.item && !l.qty) continue;
+      const q = Number(l.qty); if (!(q > 0)) return toast("Enter a quantity for every item line");
+      const it = fi(l.item);
+      if (it) out.push({ item_code: it.code, qty: q, unit_price: Number(l.price) || 0 });
+      else { const nm = l.item.trim().replace(/^[A-Z]+-\d+\s*\|\s*/i, ""); if (!nm) return toast("Pick or type an item name"); fresh[nm.toLowerCase()] = fresh[nm.toLowerCase()] || { name: nm, unit: l.unit }; out.push({ fresh: nm.toLowerCase(), qty: q, unit_price: Number(l.price) || 0 }); }
+    }
     if (!out.length) return toast("Add at least one item line");
+    const names = Object.values(fresh);
+    if (names.length && !confirm("These items are not in the catalog and will be added as NEW items with new codes:\n\n" + names.map((x) => "- " + x.name).join("\n") + "\n\nIf one of them already exists under a different name, press Cancel and pick it from the list.\n\nContinue?")) return;
     setBusy(true);
+    const codes = D.items.map((i) => i.code);
+    for (const x of names) {
+      const code = nextCode("STN", codes); codes.push(code);
+      const r = await supabase.from("items").insert({ code, name: x.name, category: "Stationery", uom: x.unit || "nos" });
+      if (r.error) { setBusy(false); return toast("Could not add new item " + x.name + ": " + r.error.message); }
+      x.code = code;
+    }
+    out.forEach((o) => { if (o.fresh) { o.item_code = fresh[o.fresh].code; delete o.fresh; } });
     let path = "";
     if (f.file) { path = `${f.branch}/${Date.now()}-${f.file.name.replace(/[^\w.-]/g, "_")}`; const u = await supabase.storage.from("grn-files").upload(path, f.file); if (u.error) { setBusy(false); return toast("File upload failed: " + u.error.message); } }
     const { data, error } = await supabase.rpc("save_grn", { p: { grn_no: f.grn.trim(), branch: f.branch, supplier_code: f.sup, invoice_no: f.inv.trim(), grn_date: f.date, received_by: f.by.trim(), source_file: path, lines: out } });
     setBusy(false);
     if (error) return toast(error.code === "23505" ? `GRN ${f.grn} is already recorded` : error.message);
-    toast("GRN saved, stock updated"); setF(blank); setLines([{ item: "", qty: "", price: "" }]); setSt(""); go(data);
+    toast("GRN saved, stock updated" + (names.length ? `. ${names.length} new item(s) added: ` + names.map((x) => x.code).join(", ") : "")); setF(blank); setLines([{ item: "", qty: "", price: "" }]); setSt(""); go(data);
   }
   return (
     <>
@@ -134,7 +152,7 @@ function Receive({ D, canB, toast, go }) {
           <label>Received by<input value={f.by} onChange={(e) => setF({ ...f, by: e.target.value })} /></label>
         </div>
         <div className="sc"><table style={{ marginTop: 10 }}><thead><tr><th>Item</th><th>Qty</th><th>Unit price (LKR)</th><th></th></tr></thead><tbody>
-          {lines.map((l, k) => <tr key={k}><td><input className="li" list="il" placeholder="Code or item name" value={l.item} style={l.item && !fi(l.item) ? { borderColor: "var(--r)" } : {}} onChange={(e) => onItem(k, e.target.value)} /></td>
+          {lines.map((l, k) => <tr key={k}><td><input className="li" list="il" placeholder="Code or item name" value={l.item} style={l.item && !fi(l.item) ? { borderColor: "#b7791f" } : {}} onChange={(e) => onItem(k, e.target.value)} />{l.item && !fi(l.item) && (() => { const sg = similar(D.items, l.item); return <div className="mu">{sg ? <>Similar item: <button className="x" style={{ fontSize: 12, color: "var(--g)" }} onClick={() => onItem(k, sg.code + " | " + sg.name)}>use {sg.code} {sg.name}</button> · otherwise added as NEW item</> : "NEW item: will be added with a new code"}</div>; })()}</td>
             <td><input type="number" min="0" step="any" value={l.qty} onChange={(e) => upd(k, "qty", e.target.value)} /></td><td><input type="number" min="0" step="any" value={l.price} onChange={(e) => upd(k, "price", e.target.value)} /></td>
             <td><button className="x" onClick={() => lines.length > 1 && setLines(lines.filter((_, i) => i !== k))}>✕</button></td></tr>)}</tbody></table></div>
         <div style={{ marginTop: 8 }}><button className="p" onClick={() => setLines([...lines, { item: "", qty: "", price: "" }])}>+ Add line</button> <button className="p" disabled={busy} onClick={save}>Save GRN &amp; update stock</button></div></div>
