@@ -8,7 +8,7 @@ const schema = {
     grn_no: { type: "STRING" }, invoice_no: { type: "STRING" }, date: { type: "STRING" },
     center: { type: "STRING" }, supplier_code: { type: "STRING" }, received_by: { type: "STRING" },
     lines: { type: "ARRAY", items: { type: "OBJECT", properties: {
-      text: { type: "STRING" }, item_code: { type: "STRING" }, qty: { type: "NUMBER" }, unit_price: { type: "NUMBER" } },
+      text: { type: "STRING" }, item_code: { type: "STRING" }, qty: { type: "NUMBER" }, unit_price: { type: "NUMBER" }, unit: { type: "STRING" } },
       required: ["text", "qty"] } },
   },
   required: ["lines"],
@@ -33,6 +33,7 @@ Extract it exactly as printed. Do not invent values; leave unknown fields empty.
 - center: one of [${branches.join(", ")}] or empty
 - supplier_code: from the supplier list only if clearly the same supplier, else empty
 - lines[].text: item description as printed
+- lines[].unit: unit of measure as printed (nos, roll, box, ream...), else empty
 - lines[].item_code: from the item list only if clearly the same product (same size/colour/pack), else empty
 Suppliers: ${sups.map((s) => `${s.code}=${s.name}`).join("; ")}
 Items: ${items.map((i) => `${i.code}=${i.name}`).join("; ")}`;
