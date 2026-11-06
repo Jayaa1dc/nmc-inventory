@@ -6,7 +6,7 @@ const schema = {
   type: "OBJECT",
   properties: {
     grn_no: { type: "STRING" }, invoice_no: { type: "STRING" }, date: { type: "STRING" },
-    center: { type: "STRING" }, supplier_code: { type: "STRING" }, received_by: { type: "STRING" },
+    center: { type: "STRING" }, supplier_code: { type: "STRING" }, supplier_name: { type: "STRING" }, received_by: { type: "STRING" },
     lines: { type: "ARRAY", items: { type: "OBJECT", properties: {
       text: { type: "STRING" }, item_code: { type: "STRING" }, qty: { type: "NUMBER" }, unit_price: { type: "NUMBER" }, unit: { type: "STRING" } },
       required: ["text", "qty"] } },
@@ -27,13 +27,16 @@ export async function POST(req) {
   const branches = JSON.parse(String(form.get("branches") || "[]"));
   const data = Buffer.from(await file.arrayBuffer()).toString("base64");
 
-  const prompt = `This is a goods received note (GRN) report from a hospital information system.
+  const prompt = `This is a Goods Received Note (GRN) printed from the hospital information system of Nawaloka Medical Centres.
 Extract it exactly as printed. Do not invent values; leave unknown fields empty.
-- date: YYYY-MM-DD
-- center: one of [${branches.join(", ")}] or empty
-- supplier_code: from the supplier list only if clearly the same supplier, else empty
-- lines[].text: item description as printed
-- lines[].unit: unit of measure as printed (nos, roll, box, ream...), else empty
+- grn_no: the "GRN No" value (e.g. GN00010446)
+- invoice_no: the "Supplier Invoice No" value
+- date: the "GRN Date" (NOT the print date at the top), as YYYY-MM-DD
+- center: the centre named in the title, as one of [${branches.join(", ")}] or empty
+- supplier_name: the "Supplier Name" exactly as printed (it may be misspelled)
+- supplier_code: pick from the supplier list if it is clearly the same supplier even with spelling mistakes, else empty
+- received_by: usually blank on this report; leave empty unless a name is printed
+- lines: one per table row. text = the "Trade Name" (ignore stray " - -" marks), qty = "Quantity", unit_price = "Cost Price", unit = unit of measure only if printed, else empty.
 - lines[].item_code: from the item list only if clearly the same product (same size/colour/pack), else empty
 Suppliers: ${sups.map((s) => `${s.code}=${s.name}`).join("; ")}
 Items: ${items.map((i) => `${i.code}=${i.name}`).join("; ")}`;
