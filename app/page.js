@@ -14,15 +14,19 @@ const saveB = (b) => { try { localStorage.setItem("nmc_branch", b); } catch {} }
 export default function Page() { return <App />; }
 
 function App() {
-  const [tab, setTab] = useState("dash"), [D, setD] = useState(null), [msg, setMsg] = useState(""), [view, setView] = useState("");
+  const [tab, setTab] = useState("dash"), [err, setErr] = useState(""), [D, setD] = useState(null), [msg, setMsg] = useState(""), [view, setView] = useState("");
   const toast = (m) => { setMsg(m); setTimeout(() => setMsg(""), 3500); };
   const load = useCallback(async () => {
     const t = (n, q = "*") => supabase.from(n).select(q);
+    try {
     const [items, sups, prices, grns, issues, ro, stock] = await Promise.all([
       t("items").order("code"), t("suppliers").order("code"), t("supplier_prices"),
       t("grns", "*, grn_lines(*)").order("created_at", { ascending: false }), t("issues").order("created_at", { ascending: false }), t("reorder_levels"), t("stock_levels"),
     ]);
+    const e = [items, sups, prices, grns, issues, ro, stock].map((r) => r.error && r.error.message).filter(Boolean);
+    setErr(e[0] || "");
     setD({ items: items.data || [], sups: sups.data || [], prices: prices.data || [], grns: grns.data || [], issues: issues.data || [], ro: ro.data || [], stock: stock.data || [] });
+    } catch (x) { setErr(String(x.message || x)); setD((d) => d || { items: [], sups: [], prices: [], grns: [], issues: [], ro: [], stock: [] }); }
   }, []);
   useEffect(() => {
     load();
@@ -44,7 +48,7 @@ function App() {
       <header><h1>NMC Stationery Inventory</h1>
         <span style={{ marginLeft: "auto" }}>{alerts.length ? <b style={{ color: "var(--r)" }}>{alerts.length} reorder alert{alerts.length > 1 ? "s" : ""}</b> : <span className="mu">No alerts</span>}</span></header>
       <nav>{TABS.map(([k, l]) => <button key={k} className={k === tab ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}</nav>
-      <main><Tab {...P} /></main>
+      <main>{(err || !D.items.length) && <div className="box" style={{ borderColor: err ? "var(--r)" : "#b7791f" }}><b style={{ color: err ? "var(--r)" : "#b7791f" }}>{err ? "Could not load data: " + err : "The item catalog is empty."}</b><div className="mu">Database: {(() => { try { return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).host; } catch { return "NOT SET (check Vercel environment variables)"; } })()}</div><button className="p" style={{ marginTop: 6 }} onClick={load}>Retry</button></div>}<Tab {...P} /></main>
       {msg && <div id="toast">{msg}</div>}
     </>
   );
@@ -77,6 +81,12 @@ function Branch({ D, stock, lowP, canB }) {
 }
 
 const ItemList = ({ items }) => <datalist id="il">{items.map((i) => <option key={i.code} value={`${i.code} | ${i.name}`} />)}</datalist>;
+const cleanName = (s) => String(s || "").replace(/\s+/g, " ").replace(/^\s*NOS\b\.?\s*/i, "").replace(/(\s*-\s*)+$/, "").trim();
+const nkey = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const titleCase = (s) => (s === s.toUpperCase() ? s.toLowerCase().replace(/(^|[\s/(])([a-z])/g, (m, a, b) => a + b.toUpperCase()) : s);
+// HIS item names (cleaned, letters and digits only) -> our item codes
+const ALIASES = { a4pcopy500sheet: "STN-013", blackpen: "STN-008", penblue: "STN-006", redpen: "STN-007", cellotape01: "STN-009", cellotape02: "STN-010", kangaroo246pin: "STN-014", crbook160p: "STN-002", crbook200p: "STN-001", eraser: "STN-019", exbook200p: "STN-003", glue750ml: "STN-011", ohppen: "STN-012", pmarkerblack: "STN-016", polytheneroll: "STN-015", varnishrollblue: "STN-004", varnishrollgreen: "STN-005", pencil: "STN-020" };
+const supByName = (sups, name) => { const t = [...toks(name)].filter((w) => w.length >= 5); const s = sups.find((x) => { const b = toks(x.name); return t.some((w) => b.has(w)); }); return s ? s.code : ""; };
 const toks = (s) => new Set(String(s).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !["nos", "pcs", "pkt", "box", "the"].includes(w)));
 const similar = (items, text) => { const a = toks(text); if (!a.size) return null; let best = null, bs = 0; for (const i of items) { const b = toks(i.name); let n = 0; a.forEach((w) => b.has(w) && n++); const s = n / Math.max(a.size, b.size); if (s > bs) { bs = s; best = i; } } return bs >= 0.6 ? best : null; };
 const findItem = (items, v) => { const c = (v || "").split(" | ")[0].trim().toUpperCase(); return items.find((i) => i.code === c) || items.find((i) => i.name.toLowerCase() === (v || "").trim().toLowerCase()); };
@@ -99,8 +109,8 @@ function Receive({ D, canB, toast, go }) {
     try {
       const r = await fetch("/api/extract-grn", { method: "POST", body: fd }), j = await r.json();
       if (!r.ok) { setSt(""); return toast(j.error || "Could not read the file"); }
-      setF((x) => ({ ...x, branch: canB.includes(j.center) ? j.center : x.branch, sup: D.sups.some((s) => s.code === j.supplier_code) ? j.supplier_code : x.sup, inv: j.invoice_no || x.inv, grn: j.grn_no || x.grn, by: j.received_by || x.by, date: /^\d{4}-\d{2}-\d{2}$/.test(j.date || "") ? j.date : x.date }));
-      const ls = (j.lines || []).map((l) => { const it = D.items.find((i) => i.code === l.item_code); return { item: it ? it.code + " | " + it.name : l.text || "", qty: l.qty ?? "", price: l.unit_price || "", unit: l.unit || "" }; });
+      setF((x) => ({ ...x, branch: canB.includes(j.center) ? j.center : x.branch, sup: D.sups.some((s) => s.code === j.supplier_code) ? j.supplier_code : supByName(D.sups, j.supplier_name) || x.sup, inv: j.invoice_no || x.inv, grn: j.grn_no || x.grn, by: j.received_by || x.by, date: /^\d{4}-\d{2}-\d{2}$/.test(j.date || "") ? j.date : x.date }));
+      const ls = (j.lines || []).map((l) => { const cn = cleanName(l.text); const it = D.items.find((i) => i.code === l.item_code) || D.items.find((i) => i.code === ALIASES[nkey(cn)]) || D.items.find((i) => nkey(i.name) === nkey(cn)); return { item: it ? it.code + " | " + it.name : titleCase(cn), qty: l.qty ?? "", price: l.unit_price || "", unit: l.unit || "" }; });
       setLines(ls.length ? ls : [{ item: "", qty: "", price: "" }]);
       const un = ls.filter((l) => !fi(l.item)).length;
       setSt(`Read ${ls.length} line(s).` + (un ? ` ${un} item(s) are not in the catalog: pick the matching item, or leave them and they will be added as NEW items (with new codes) when you save.` : "") + " Check everything, then press Save.");
